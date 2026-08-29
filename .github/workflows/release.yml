@@ -22,6 +22,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Test
+        run: go test ./...
       - name: Build
         env:
           CGO_ENABLED: "0"
@@ -29,7 +31,6 @@ jobs:
           GOOS: linux
         run: |
           mkdir -p dist
-          go test ./...
           go build -trimpath -ldflags="-s -w" -o "dist/glimpse-linux-${GOARCH}" ./cmd/glimpse
           cd dist
           sha256sum "glimpse-linux-${GOARCH}" > "glimpse-linux-${GOARCH}.sha256"
