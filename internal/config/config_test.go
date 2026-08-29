@@ -26,3 +26,30 @@ func TestParsePublicURLRejectsNonOriginValues(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadParsesAllowedPorts(t *testing.T) {
+	t.Setenv("GLIMPSE_ALLOWED_PORTS", "443, 5443")
+	configuration, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(configuration.AllowedPorts) != 2 {
+		t.Fatalf("allowed ports = %#v", configuration.AllowedPorts)
+	}
+	for _, port := range []string{"443", "5443"} {
+		if _, allowed := configuration.AllowedPorts[port]; !allowed {
+			t.Errorf("port %s is not allowed", port)
+		}
+	}
+}
+
+func TestLoadRejectsInvalidAllowedPorts(t *testing.T) {
+	for _, value := range []string{"0", "65536", "443,", "https"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("GLIMPSE_ALLOWED_PORTS", value)
+			if _, err := Load(); err == nil {
+				t.Fatal("expected invalid allowed ports to be rejected")
+			}
+		})
+	}
+}

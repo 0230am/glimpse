@@ -26,6 +26,7 @@ func main() {
 	fetchClient := fetcher.New(fetcher.Config{
 		MaximumConcurrentRequests:        configuration.MaximumConcurrentRequests,
 		MaximumConcurrentRequestsPerHost: configuration.MaximumConcurrentRequestsPerHost,
+		AllowedPorts:                     configuration.AllowedPorts,
 	})
 	handler := api.New(service.New(fetchClient), configuration.PublicURL, configuration.AllowedOrigins, logger)
 	server := &http.Server{

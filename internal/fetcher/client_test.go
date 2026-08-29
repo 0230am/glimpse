@@ -16,6 +16,16 @@ func TestValidateURLAcceptsPublicHTTPURLs(t *testing.T) {
 	}
 }
 
+func TestValidateURLAcceptsConfiguredPort(t *testing.T) {
+	result, err := validateURL("https://example.test:5443/upload/image.jpg", map[string]struct{}{"80": {}, "443": {}, "5443": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Port() != "5443" {
+		t.Fatalf("port = %q", result.Port())
+	}
+}
+
 func TestValidateURLRejectsPrivateAndUnsafeURLs(t *testing.T) {
 	values := []string{
 		"http://127.0.0.1/",

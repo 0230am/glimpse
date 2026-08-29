@@ -96,12 +96,14 @@ type Resolver interface {
 type Config struct {
 	MaximumConcurrentRequests        int
 	MaximumConcurrentRequestsPerHost int
+	AllowedPorts                     map[string]struct{}
 	Resolver                         Resolver
 }
 
 type Client struct {
-	httpClient *http.Client
-	limiter    *requestLimiter
+	httpClient   *http.Client
+	limiter      *requestLimiter
+	allowedPorts map[string]struct{}
 }
 
 func New(config Config) *Client {
@@ -115,6 +117,7 @@ func New(config Config) *Client {
 	if config.MaximumConcurrentRequestsPerHost <= 0 {
 		config.MaximumConcurrentRequestsPerHost = 8
 	}
+	allowedPorts := cloneAllowedPorts(config.AllowedPorts)
 	transport := &http.Transport{
 		Proxy:                  nil,
 		DialContext:            publicDialer(resolver),
@@ -137,11 +140,16 @@ func New(config Config) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
-		limiter: newRequestLimiter(config.MaximumConcurrentRequests, config.MaximumConcurrentRequestsPerHost),
+		limiter:      newRequestLimiter(config.MaximumConcurrentRequests, config.MaximumConcurrentRequestsPerHost),
+		allowedPorts: allowedPorts,
 	}
 }
 
 func ValidateURL(value string) (*url.URL, error) {
+	return validateURL(value, map[string]struct{}{"80": {}, "443": {}})
+}
+
+func validateURL(value string, allowedPorts map[string]struct{}) (*url.URL, error) {
 	if len(value) > 4_096 {
 		return nil, &InputError{Message: "The link preview URL is too long."}
 	}
@@ -155,8 +163,12 @@ func ValidateURL(value string) (*url.URL, error) {
 	if parsed.User != nil {
 		return nil, &InputError{Message: "Link preview URLs cannot contain credentials."}
 	}
-	if port := parsed.Port(); port != "" && port != "80" && port != "443" {
-		return nil, &InputError{Message: "Link preview URLs cannot use a non-standard port."}
+	port := parsed.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[parsed.Scheme]
+	}
+	if _, allowed := allowedPorts[port]; !allowed {
+		return nil, &InputError{Message: "Link preview URLs cannot use this port."}
 	}
 	hostname := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 	if hostname == "" || hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") || strings.HasSuffix(hostname, ".local") || strings.HasSuffix(hostname, ".internal") || strings.HasSuffix(hostname, ".lan") {
@@ -171,7 +183,7 @@ func ValidateURL(value string) (*url.URL, error) {
 func (c *Client) FetchResource(ctx context.Context, value string, maximumBytes int64, accept string) (Resource, error) {
 	requestContext, cancel := context.WithTimeout(ctx, requestDeadline)
 	defer cancel()
-	current, err := ValidateURL(value)
+	current, err := validateURL(value, c.allowedPorts)
 	if err != nil {
 		return Resource{}, err
 	}
@@ -186,7 +198,7 @@ func (c *Client) FetchResource(ctx context.Context, value string, maximumBytes i
 			if location == "" || redirects == maximumRedirects {
 				return Resource{}, errors.New("linked resource redirected too many times")
 			}
-			current, err = redirectURL(current, location)
+			current, err = redirectURL(current, location, c.allowedPorts)
 			if err != nil {
 				return Resource{}, err
 			}
@@ -207,7 +219,7 @@ func (c *Client) FetchResource(ctx context.Context, value string, maximumBytes i
 
 func (c *Client) FetchStream(ctx context.Context, value string, accept string, rangeHeader string) (Response, error) {
 	requestContext, cancel := context.WithTimeout(ctx, mediaDeadline)
-	current, err := ValidateURL(value)
+	current, err := validateURL(value, c.allowedPorts)
 	if err != nil {
 		cancel()
 		return Response{}, err
@@ -225,7 +237,7 @@ func (c *Client) FetchStream(ctx context.Context, value string, accept string, r
 				cancel()
 				return Response{}, errors.New("linked resource redirected too many times")
 			}
-			current, err = redirectURL(current, location)
+			current, err = redirectURL(current, location, c.allowedPorts)
 			if err != nil {
 				cancel()
 				return Response{}, err
@@ -247,7 +259,7 @@ func (c *Client) FetchStream(ctx context.Context, value string, accept string, r
 func (c *Client) FetchHeaders(ctx context.Context, value string, accept string) (HeaderResponse, error) {
 	requestContext, cancel := context.WithTimeout(ctx, requestDeadline)
 	defer cancel()
-	current, err := ValidateURL(value)
+	current, err := validateURL(value, c.allowedPorts)
 	if err != nil {
 		return HeaderResponse{}, err
 	}
@@ -271,7 +283,7 @@ func (c *Client) FetchHeaders(ctx context.Context, value string, accept string) 
 			if location == "" || redirects == maximumRedirects {
 				return HeaderResponse{}, errors.New("linked resource redirected too many times")
 			}
-			current, err = redirectURL(current, location)
+			current, err = redirectURL(current, location, c.allowedPorts)
 			if err != nil {
 				return HeaderResponse{}, err
 			}
@@ -365,12 +377,23 @@ func readBounded(body io.ReadCloser, maximumBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-func redirectURL(baseURL *url.URL, location string) (*url.URL, error) {
+func redirectURL(baseURL *url.URL, location string, allowedPorts map[string]struct{}) (*url.URL, error) {
 	reference, err := url.Parse(location)
 	if err != nil {
 		return nil, &InputError{Message: "The redirect URL is invalid."}
 	}
-	return ValidateURL(baseURL.ResolveReference(reference).String())
+	return validateURL(baseURL.ResolveReference(reference).String(), allowedPorts)
+}
+
+func cloneAllowedPorts(value map[string]struct{}) map[string]struct{} {
+	if len(value) == 0 {
+		value = map[string]struct{}{"80": {}, "443": {}}
+	}
+	result := make(map[string]struct{}, len(value))
+	for port := range value {
+		result[port] = struct{}{}
+	}
+	return result
 }
 
 func isRedirect(status int) bool {

@@ -43,6 +43,7 @@ Glimpse requires Go 1.27 or newer when building from source.
 | `GLIMPSE_LISTEN_ADDRESS` | `127.0.0.1:8080` | HTTP listen address. |
 | `GLIMPSE_PUBLIC_URL` | `http://<listen address>` | Canonical public origin used in generated media URLs. |
 | `GLIMPSE_ALLOWED_ORIGINS` | empty | Comma-separated exact browser origins allowed by CORS. |
+| `GLIMPSE_ALLOWED_PORTS` | `80,443` | Comma-separated remote HTTP/HTTPS ports Glimpse may contact. |
 | `GLIMPSE_MAX_CONCURRENT_REQUESTS` | `64` | Maximum concurrent outbound requests. |
 | `GLIMPSE_MAX_CONCURRENT_REQUESTS_PER_HOST` | `8` | Maximum concurrent outbound requests per hostname. |
 
@@ -52,6 +53,7 @@ Example:
 GLIMPSE_LISTEN_ADDRESS=127.0.0.1:8080
 GLIMPSE_PUBLIC_URL=https://glimpse.example.com
 GLIMPSE_ALLOWED_ORIGINS=https://chat.example.com,http://localhost:5173
+GLIMPSE_ALLOWED_PORTS=80,443,5443
 GLIMPSE_MAX_CONCURRENT_REQUESTS=32
 GLIMPSE_MAX_CONCURRENT_REQUESTS_PER_HOST=4
 ```
@@ -74,7 +76,7 @@ The media streaming endpoint accepts at most one HTTP byte range.
 
 ## Security model
 
-Glimpse only accepts HTTP and HTTPS URLs on ports 80 and 443. It rejects embedded credentials, local hostnames, private addresses, special-use addresses, and redirects that cross those boundaries. DNS answers are validated before connecting, and the accepted address is pinned for that connection.
+Glimpse accepts HTTP and HTTPS URLs only on the ports listed in `GLIMPSE_ALLOWED_PORTS`. Ports 80 and 443 are enabled by default; deployments can add ports used by federated media hosts, such as 5443. It rejects embedded credentials, local hostnames, private addresses, special-use addresses, disallowed ports, and redirects that cross those boundaries. DNS answers are validated before connecting, and the accepted address is pinned for that connection.
 
 Current response limits are:
 

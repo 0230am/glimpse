@@ -10,6 +10,7 @@ import (
 
 const (
 	defaultListenAddress                    = "127.0.0.1:8080"
+	defaultAllowedPorts                     = "80,443"
 	defaultMaximumConcurrentRequests        = 64
 	defaultMaximumConcurrentRequestsPerHost = 8
 )
@@ -18,6 +19,7 @@ type Config struct {
 	ListenAddress                    string
 	PublicURL                        *url.URL
 	AllowedOrigins                   map[string]struct{}
+	AllowedPorts                     map[string]struct{}
 	MaximumConcurrentRequests        int
 	MaximumConcurrentRequestsPerHost int
 }
@@ -25,6 +27,10 @@ type Config struct {
 func Load() (Config, error) {
 	listenAddress := valueOrDefault("GLIMPSE_LISTEN_ADDRESS", defaultListenAddress)
 	publicURL, err := parsePublicURL(valueOrDefault("GLIMPSE_PUBLIC_URL", "http://"+listenAddress))
+	if err != nil {
+		return Config{}, err
+	}
+	allowedPorts, err := parsePorts(valueOrDefault("GLIMPSE_ALLOWED_PORTS", defaultAllowedPorts))
 	if err != nil {
 		return Config{}, err
 	}
@@ -43,6 +49,7 @@ func Load() (Config, error) {
 		ListenAddress:                    listenAddress,
 		PublicURL:                        publicURL,
 		AllowedOrigins:                   parseOrigins(os.Getenv("GLIMPSE_ALLOWED_ORIGINS")),
+		AllowedPorts:                     allowedPorts,
 		MaximumConcurrentRequests:        maximumConcurrentRequests,
 		MaximumConcurrentRequestsPerHost: maximumConcurrentRequestsPerHost,
 	}, nil
@@ -84,4 +91,16 @@ func parseOrigins(value string) map[string]struct{} {
 		}
 	}
 	return result
+}
+
+func parsePorts(value string) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	for _, port := range strings.Split(value, ",") {
+		number, err := strconv.Atoi(strings.TrimSpace(port))
+		if err != nil || number < 1 || number > 65_535 {
+			return nil, fmt.Errorf("GLIMPSE_ALLOWED_PORTS must be a comma-separated list of ports from 1 to 65535")
+		}
+		result[strconv.Itoa(number)] = struct{}{}
+	}
+	return result, nil
 }
